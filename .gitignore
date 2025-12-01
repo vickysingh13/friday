@@ -1,6 +1,7 @@
 # Ignore Secrets
 *.json
 credentials.json
+serviceAccountKey.json
 client_secret.json
 key.json
 .env
@@ -17,3 +18,6 @@ __pycache__/
 
 #ignore Service Account Keys
 .serviceAccountKey.json
+
+#ignore the sample env file
+samples
