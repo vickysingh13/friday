@@ -1,0 +1,19 @@
+# Ignore Secrets
+*.json
+credentials.json
+client_secret.json
+key.json
+.env
+
+# Ignore Dependencies (The 10,000 files issue)
+node_modules/
+venv/
+env/
+__pycache__/
+*.pyc
+
+# Ignore System files
+.DS_Store
+
+#ignore Service Account Keys
+.serviceAccountKey.json

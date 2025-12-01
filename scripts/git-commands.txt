@@ -1,0 +1,7 @@
+git init
+git add .
+git commit -m "initial commit - snackmaster starter"
+# create repo on GitHub and push
+git branch -M main
+git remote add origin https://github.com/<your-username>/snackmaster-starter.git
+git push -u origin main
