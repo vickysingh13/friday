@@ -30,8 +30,8 @@
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(4,10,15,0.45), rgba(4,10,15,0.45)),
-    url("/assets/login-bg.jpg");
+  linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.55)),
+  url("/assets/login-bg.png");
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
