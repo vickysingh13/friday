@@ -15,7 +15,7 @@ export default function Navbar() {
       style={{
         width: "100%",
         padding: "12px 24px",
-        background: "#111",          // Solid dark theme
+        background: "#111",          
         color: "#fff",
         display: "flex",
         alignItems: "center",
@@ -26,7 +26,7 @@ export default function Navbar() {
         boxShadow: "0 2px 6px rgba(0,0,0,0.4)",
       }}
     >
-      {/* LOGO SECTION */}
+      {/* LOGO */}
       <div
         style={{
           fontSize: "1.4rem",
@@ -39,23 +39,26 @@ export default function Navbar() {
         SNACK<span style={{ color: "#03a9f4" }}>MASTER</span>
       </div>
 
-      {/* CENTER NAV LINKS */}
+      {/* CENTER MENU ITEMS */}
       <div style={{ display: "flex", gap: "28px", fontSize: "1rem" }}>
         <span style={linkStyle} onClick={() => nav("/")}>
           Dashboard
         </span>
+
         <span style={linkStyle} onClick={() => nav("/")}>
           Machines
         </span>
+
         <span style={linkStyle} onClick={() => nav("/")}>
-          Inventory
+          Products
         </span>
+
         <span style={linkStyle} onClick={() => nav("/")}>
-          History
+          Refill Logs
         </span>
       </div>
 
-      {/* RIGHT SIDE */}
+      {/* RIGHT SIDE (EMAIL + LOGOUT) */}
       <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
         <span style={{ fontSize: "0.95rem", opacity: 0.8 }}>
           {user.email}
