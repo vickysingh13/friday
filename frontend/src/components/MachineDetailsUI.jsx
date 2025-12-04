@@ -1,284 +1,629 @@
-import React, { useEffect, useState, useRef } from 'react'
-import Papa from 'papaparse'
-import axios from 'axios'
-import { doc, getDoc, collection, getDocs, query, orderBy } from 'firebase/firestore'
-import { db } from '../firebaseClient'
+import React, { useEffect, useState, useRef } from "react";
+import Papa from "papaparse";
+import axios from "axios";
+import {
+  doc,
+  getDoc,
+  collection,
+  getDocs,
+  query,
+  orderBy,
+  where,
+  updateDoc,
+  serverTimestamp,
+} from "firebase/firestore";
+import { db } from "../firebaseClient";
 
 export default function MachineDetailsUI({ machineId, onBack }) {
+  const [machine, setMachine] = useState(null);
+  const [slots, setSlots] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [products, setProducts] = useState([]);
 
-  const [machine, setMachine] = useState(null)
-  const [slots, setSlots] = useState([])
-  const [logs, setLogs] = useState([])
-  const [masterFile, setMasterFile] = useState(null)
-  const [salesFile, setSalesFile] = useState(null)
-  const [results, setResults] = useState([])
-  const [status, setStatus] = useState('')
+  const [masterFile, setMasterFile] = useState(null);
+  const [salesFile, setSalesFile] = useState(null);
+  const [results, setResults] = useState([]);
+  const [status, setStatus] = useState("");
 
-  const fileInputMaster = useRef()
-  const fileInputSales = useRef()
+  const fileInputMaster = useRef();
+  const fileInputSales = useRef();
+  const user = JSON.parse(localStorage.getItem("sm_user") || "{}");
 
+  // ─────────────────────────────────────────
+  // LOAD MACHINE / SLOTS / PRODUCTS / LOGS
+  // ─────────────────────────────────────────
   useEffect(() => {
-    if (!machineId) return
-    loadMachine()
-    loadLogs()
-  }, [machineId])
+    if (!machineId) return;
+    loadMachine();
+    loadSlots();
+    loadProducts();
+    loadMyLogs();
+  }, [machineId]);
 
   async function loadMachine() {
     try {
-      const d = await getDoc(doc(db, 'machines', machineId))
-      if (d.exists()) setMachine({ id: d.id, ...d.data() })
-
-      const slotsSnap = await getDocs(collection(db, `machines/${machineId}/slots`)).catch(() => null)
-      if (slotsSnap && !slotsSnap.empty) setSlots(slotsSnap.docs.map(s => ({ id: s.id, ...s.data() })))
-
-    } catch (err) { console.error(err) }
+      const m = await getDoc(doc(db, "machines", machineId));
+      if (m.exists()) setMachine({ id: m.id, ...m.data() });
+    } catch (e) {
+      console.error("Failed to load machine", e);
+    }
   }
 
-  async function loadLogs() {
+  async function loadSlots() {
     try {
-      const q = query(collection(db, 'refill_logs'), orderBy('createdAt', 'desc'))
-      const snap = await getDocs(q)
-      setLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })))
-    } catch (err) { console.error(err) }
+      const snap = await getDocs(collection(db, `machines/${machineId}/slots`));
+      setSlots(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (e) {
+      console.error("Failed to load slots", e);
+    }
   }
 
+  async function loadProducts() {
+    try {
+      const snap = await getDocs(collection(db, "products"));
+      const list = snap.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      }));
+      setProducts(list);
+    } catch (e) {
+      console.error("Failed to load products", e);
+    }
+  }
+
+  async function loadMyLogs() {
+    try {
+      const qRef = query(
+        collection(db, "refill_logs"),
+        where("machineId", "==", machineId),
+        where("userEmail", "==", user.email),
+        orderBy("createdAt", "desc")
+      );
+      const snap = await getDocs(qRef);
+      setLogs(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    } catch (e) {
+      console.error("Failed to load logs", e);
+    }
+  }
+
+  // ─────────────────────────────────────────
+  // CSV UTILS
+  // ─────────────────────────────────────────
   function parseCSV(file) {
     return new Promise((resolve, reject) => {
       Papa.parse(file, {
         header: true,
-        complete: r => resolve(r.data),
-        error: e => reject(e)
-      })
-    })
+        complete: (r) => resolve(r.data),
+        error: reject,
+      });
+    });
   }
 
-  async function handleProcess() {
-    if (!masterFile || !salesFile) return alert("Please select both CSV files")
-
-    setStatus("Parsing CSV...")
+  async function handleCalculate() {
+    if (!masterFile || !salesFile) return alert("Upload both CSV files");
+    setStatus("Parsing...");
 
     try {
-      const master = await parseCSV(masterFile)
-      const sales = await parseCSV(salesFile)
+      const master = await parseCSV(masterFile);
+      const sales = await parseCSV(salesFile);
 
-      const masterMap = {}
-      master.forEach(row => {
-        const name = row.Name || row.name
-        const qty = Number(row.quantity || row.Quantity || row.qty || 0)
-        if (!name) return
-        masterMap[name] = (masterMap[name] || 0) + qty
-      })
+      const stock = {};
+      master.forEach((row) => {
+        const name = row.Name || row.name;
+        const qty = Number(row.qty || row.quantity || 0);
+        if (!name) return;
+        stock[name] = (stock[name] || 0) + qty;
+      });
 
-      const salesCount = {}
-      sales.forEach(row => {
-        const name = row.Name || row.name
-        if (!name) return
-        salesCount[name] = (salesCount[name] || 0) + 1
-      })
+      const sold = {};
+      sales.forEach((row) => {
+        const name = row.Name || row.name;
+        if (!name) return;
+        sold[name] = (sold[name] || 0) + 1;
+      });
 
-      const out = []
-      Object.keys(masterMap).forEach(name => {
-        out.push({
-          name,
-          masterQty: masterMap[name],
-          salesQty: salesCount[name] || 0,
-          remainingQty: Math.max(0, masterMap[name] - (salesCount[name] || 0))
-        })
-      })
+      const out = Object.keys(stock).map((name) => ({
+        name,
+        masterQty: stock[name],
+        salesQty: sold[name] || 0,
+        remainingQty: Math.max(0, stock[name] - (sold[name] || 0)),
+      }));
 
-      setResults(out)
-      setStatus("Updating DB...")
-
-      const backend = import.meta.env.VITE_BACKEND_URL
-      await axios.post(`${backend}/process-csv`, {
-        machineId,
-        results: out,
-        capacity: machine.capacity
-      })
-
-      setStatus("Updated successfully")
-      await loadMachine()
-
-    } catch (err) {
-      console.error(err)
-      setStatus("Error: " + err.message)
+      setResults(out);
+      setStatus("Ready to confirm");
+    } catch (e) {
+      console.error(e);
+      setStatus("Error while parsing");
     }
   }
 
-  async function handleConfirmRefill() {
-    if (!confirm("Confirm refill complete?")) return;
+  async function confirmRefill() {
+    if (!results || results.length === 0) {
+      if (!confirm("No CSV result table yet. Confirm refill anyway?")) return;
+    } else {
+      if (!confirm("Confirm refill using current CSV results?")) return;
+    }
 
-    setStatus("Refilling...")
+    setStatus("Saving...");
 
     try {
-      const backend = import.meta.env.VITE_BACKEND_URL
-      const user = JSON.parse(localStorage.getItem("sm_user") || "{}")
-
-      await axios.post(`${backend}/confirm-refill`, {
+      await axios.post(`${import.meta.env.VITE_BACKEND_URL}/confirm-refill`, {
         machineId,
-        userEmail: user.email
-      })
+        userEmail: user.email,
+        results,
+      });
 
-      setStatus("Refill complete")
-      await loadMachine()
-      await loadLogs()
-
-    } catch (err) {
-      console.error(err)
-      setStatus("Error: " + err.message)
+      await loadMachine();
+      await loadMyLogs();
+      setStatus("Refill confirmed");
+    } catch (e) {
+      console.error(e);
+      setStatus("Error submitting refill");
     }
+  }
+
+  // ─────────────────────────────────────────
+  // SLOT EDITING HELPERS
+  // ─────────────────────────────────────────
+  function handleSlotFieldChange(slotId, field, value) {
+    setSlots((prev) =>
+      prev.map((s) =>
+        s.id === slotId
+          ? {
+              ...s,
+              [field]:
+                field === "capacity" || field === "current_qty"
+                  ? value === ""
+                    ? ""
+                    : Number(value)
+                  : value,
+            }
+          : s
+      )
+    );
+  }
+
+  async function saveSlot(slot) {
+    try {
+      const product =
+        products.find((p) => p.id === slot.product_id) ||
+        products.find((p) => p.name === slot.product_name);
+
+      await updateDoc(doc(db, `machines/${machineId}/slots`, slot.id), {
+        tray: slot.tray ?? null,
+        slot_number: slot.slot_number ?? null,
+        product_id: product ? product.id : slot.product_id || null,
+        product_name: product ? product.name : slot.product_name || null,
+        capacity: Number(slot.capacity) || 0,
+        current_qty: Number(slot.current_qty) || 0,
+        updatedAt: serverTimestamp(),
+      });
+
+      alert("Slot updated");
+      await loadSlots(); // reload to stay in sync
+    } catch (e) {
+      console.error(e);
+      alert("Failed to update slot");
+    }
+  }
+
+  function labelForProduct(p) {
+    const parts = [];
+    if (p.name) parts.push(p.name);
+    if (p.sku) parts.push(`(${p.sku})`);
+    return parts.join(" ");
+  }
+
+  function getSlotSelectedProductId(slot) {
+    if (slot.product_id) return slot.product_id;
+    if (slot.product_name) {
+      const match = products.find((p) => p.name === slot.product_name);
+      if (match) return match.id;
+    }
+    return "";
+  }
+
+  // Placeholder merge / demerge
+  function handleMergeClick() {
+    alert("Merge / demerge slots will be implemented in the next phase.");
+  }
+
+  if (!machine) {
+    return (
+      <div style={{ padding: 24 }}>
+        <button onClick={onBack} style={btnBack}>
+          ← Back
+        </button>
+        <p>Loading machine...</p>
+      </div>
+    );
   }
 
   return (
-    <div style={{ padding: 20 }}>
-
-      {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
-        <button onClick={onBack}>← Back</button>
+    <div style={{ padding: 24 }}>
+      {/* HEADER */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          marginBottom: 20,
+          alignItems: "center",
+        }}
+      >
+        <button onClick={onBack} style={btnBack}>
+          ← Back
+        </button>
 
         <div>
-          <strong>{machine?.name || machineId}</strong>
-          <div style={{ fontSize: 12, color: '#555' }}>{machine?.location || '-'}</div>
+          <h2 style={{ margin: 0 }}>{machine?.name || machineId}</h2>
+          <p style={{ color: "#555", marginTop: 4 }}>{machine?.location}</p>
         </div>
 
-        <div style={{ textAlign: 'right' }}>
-          <div>Capacity: {machine?.capacity}</div>
-          <div>Stock: {machine?.current_stock_percent}%</div>
-          <div>Last Refill: {machine?.last_refill_at ? new Date(machine.last_refill_at.seconds * 1000).toLocaleString() : '-'}</div>
+        <div style={{ textAlign: "right", fontSize: 14 }}>
+          <div>
+            <b>Capacity:</b> {machine?.capacity}
+          </div>
+          <div>
+            <b>Stock:</b> {machine?.current_stock_percent}%
+          </div>
+          <div>
+            <b>Last Refill:</b>{" "}
+            {machine?.last_refill_at?.seconds
+              ? new Date(
+                  machine.last_refill_at.seconds * 1000
+                ).toLocaleString("en-IN")
+              : "-"}
+          </div>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 420px', gap: 20 }}>
+      {/* SLOT TABLE CARD */}
+      <div style={card}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "baseline",
+          }}
+        >
+          <h3 style={{ margin: 0 }}>Tray / Slot Configuration</h3>
+          <span style={{ fontSize: 12, color: "#888" }}>
+            Edit product, capacity & current qty, then click SAVE
+          </span>
+        </div>
 
-        {/* LEFT PANEL */}
-        <div>
+        {slots.length === 0 ? (
+          <p style={{ marginTop: 12 }}>No slots configured yet.</p>
+        ) : (
+          <table style={{ width: "100%", marginTop: 10, fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th style={thSmall}>Tray</th>
+                <th style={thSmall}>Slot</th>
+                <th style={thSmall}>Product</th>
+                <th style={thSmall}>Capacity</th>
+                <th style={thSmall}>Current Qty</th>
+                <th style={thSmall}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {slots.map((s) => {
+                const selectedProductId = getSlotSelectedProductId(s);
+                return (
+                  <tr key={s.id}>
+                    <td style={tdSmall}>{s.tray ?? "-"}</td>
+                    <td style={tdSmall}>{s.slot_number}</td>
 
-          {/* Slots */}
-          <div style={{ background: '#fff', padding: 16, borderRadius: 8 }}>
-            <h3>Slot-wise / Product list</h3>
+                    {/* PRODUCT DROPDOWN */}
+                    <td style={tdSmall}>
+                      <select
+                        style={inputSelect}
+                        value={selectedProductId}
+                        onChange={(e) =>
+                          handleSlotFieldChange(s.id, "product_id", e.target.value)
+                        }
+                      >
+                        <option value="">-- Select product --</option>
+                        {products.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {labelForProduct(p)}
+                          </option>
+                        ))}
+                      </select>
+                    </td>
 
-            {slots.length > 0 ? (
-              <table style={{ width: '100%' }}>
-                <thead>
-                  <tr>
-                    <th>Slot</th><th>Product</th><th>Capacity</th><th>Current</th>
+                    {/* CAPACITY EDIT */}
+                    <td style={tdSmall}>
+                      <input
+                        type="number"
+                        min="0"
+                        style={inputNumber}
+                        value={
+                          s.capacity === undefined || s.capacity === null
+                            ? ""
+                            : s.capacity
+                        }
+                        onChange={(e) =>
+                          handleSlotFieldChange(s.id, "capacity", e.target.value)
+                        }
+                      />
+                    </td>
+
+                    {/* CURRENT_QTY EDIT */}
+                    <td style={tdSmall}>
+                      <input
+                        type="number"
+                        min="0"
+                        style={inputNumber}
+                        value={
+                          s.current_qty === undefined || s.current_qty === null
+                            ? ""
+                            : s.current_qty
+                        }
+                        onChange={(e) =>
+                          handleSlotFieldChange(
+                            s.id,
+                            "current_qty",
+                            e.target.value
+                          )
+                        }
+                      />
+                    </td>
+
+                    {/* ACTION BUTTONS */}
+                    <td style={tdSmall}>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button
+                          style={btnTinyPrimary}
+                          onClick={() => saveSlot(s)}
+                        >
+                          Save
+                        </button>
+                        <button
+                          style={btnTinyGhost}
+                          onClick={handleMergeClick}
+                          title="Merge with neighboring slot (coming soon)"
+                        >
+                          Merge
+                        </button>
+                        <button
+                          style={btnTinyGhost}
+                          onClick={handleMergeClick}
+                          title="Demerge slot (coming soon)"
+                        >
+                          Demerge
+                        </button>
+                      </div>
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {slots.map(s => (
-                    <tr key={s.id}>
-                      <td>{s.slot_number}</td>
-                      <td>{s.product_name}</td>
-                      <td>{s.capacity}</td>
-                      <td>{s.current_qty}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : <div>No slot data available.</div>}
-          </div>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
 
-          <div style={{ height: 20 }} />
+      {/* CSV INVENTORY TOOL SECTION */}
+      <h3 style={{ marginTop: 30 }}>CSV Inventory Tool</h3>
 
-          {/* CSV TOOL */}
-          <div style={{ background: '#fff', padding: 16, borderRadius: 8 }}>
-            <h3>CSV Inventory Tool</h3>
-
-            {/* Drag + Drop */}
-            <div style={{ display: 'flex', gap: 20 }}>
-
-              <div
-                onDragOver={e => e.preventDefault()}
-                onDrop={e => { e.preventDefault(); if (e.dataTransfer.files[0]) setMasterFile(e.dataTransfer.files[0]) }}
-                onClick={() => fileInputMaster.current.click()}
-                style={{ flex: 1, padding: 20, border: '2px dashed #3498db', textAlign: 'center', cursor: 'pointer' }}
-              >
-                <strong>Drop Master CSV</strong><br />
-                <small>or click</small>
-              </div>
-
-              <div
-                onDragOver={e => e.preventDefault()}
-                onDrop={e => { e.preventDefault(); if (e.dataTransfer.files[0]) setSalesFile(e.dataTransfer.files[0]) }}
-                onClick={() => fileInputSales.current.click()}
-                style={{ flex: 1, padding: 20, border: '2px dashed #f39c12', textAlign: 'center', cursor: 'pointer' }}
-              >
-                <strong>Drop Sales CSV</strong><br />
-                <small>or click</small>
-              </div>
-
-            </div>
-
-            {/* Hidden inputs */}
-            <input type="file" ref={fileInputMaster} style={{ display: 'none' }} accept=".csv" onChange={e => setMasterFile(e.target.files[0])} />
-            <input type="file" ref={fileInputSales} style={{ display: 'none' }} accept=".csv" onChange={e => setSalesFile(e.target.files[0])} />
-
-            {/* Buttons */}
-            <button onClick={handleProcess}>Calculate</button>
-
-            {/* Results */}
-            {results.length > 0 && (
-              <table style={{ width: '100%', marginTop: 12 }}>
-                <thead>
-                  <tr><th>Name</th><th>Master</th><th>Sales</th><th>Remaining</th></tr>
-                </thead>
-                <tbody>
-                  {results.map((r, i) => (
-                    <tr key={i}>
-                      <td>{r.name}</td>
-                      <td>{r.masterQty}</td>
-                      <td>{r.salesQty}</td>
-                      <td>{r.remainingQty}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-
-          </div>
+      <div style={{ display: "flex", gap: 20, marginTop: 10 }}>
+        <div
+          style={csvCard}
+          onClick={() => fileInputMaster.current && fileInputMaster.current.click()}
+        >
+          <h4 style={{ marginBottom: 6 }}>Master CSV</h4>
+          <p style={{ margin: 0, fontSize: 13, color: "#555" }}>
+            Upload or drag file here
+          </p>
+          <small style={{ fontSize: 11, color: "#999" }}>
+            Expected: product & quantity
+          </small>
+          <input
+            ref={fileInputMaster}
+            type="file"
+            style={{ display: "none" }}
+            accept=".csv"
+            onChange={(e) => setMasterFile(e.target.files[0])}
+          />
         </div>
 
-        {/* RIGHT PANEL */}
-        <div>
+        <div
+          style={csvCard}
+          onClick={() => fileInputSales.current && fileInputSales.current.click()}
+        >
+          <h4 style={{ marginBottom: 6 }}>Sales CSV</h4>
+          <p style={{ margin: 0, fontSize: 13, color: "#555" }}>
+            Upload or drag file here
+          </p>
+          <small style={{ fontSize: 11, color: "#999" }}>
+            Expected: vends / transactions
+          </small>
+          <input
+            ref={fileInputSales}
+            type="file"
+            style={{ display: "none" }}
+            accept=".csv"
+            onChange={(e) => setSalesFile(e.target.files[0])}
+          />
+        </div>
+      </div>
 
-          {/* Actions */}
-          <div style={{ background: '#fff', padding: 16, borderRadius: 8 }}>
-            <h3>Actions</h3>
+      {/* CSV BUTTONS */}
+      <div style={{ display: "flex", gap: 14, marginTop: 20, alignItems: "center" }}>
+        <button style={btnPrimary} onClick={handleCalculate}>
+          Calculate
+        </button>
+        <button style={btnSuccess} onClick={confirmRefill}>
+          Confirm Refill
+        </button>
+        {status && (
+          <span style={{ fontSize: 13, color: "#555" }}>
+            Status: <b>{status}</b>
+          </span>
+        )}
+      </div>
 
-            <button onClick={() => fileInputMaster.current.click()}>Upload Master CSV</button>
-            <button onClick={() => fileInputSales.current.click()}>Upload Sales CSV</button>
-            <button onClick={handleProcess}>Calculate & Update</button>
-            <button onClick={handleConfirmRefill}>Confirm Refill</button>
-          </div>
+      {/* RESULT TABLE */}
+      {results.length > 0 && (
+        <table style={{ width: "100%", marginTop: 20, fontSize: 13 }}>
+          <thead>
+            <tr>
+              <th style={thSmall}>Product</th>
+              <th style={thSmall}>Master</th>
+              <th style={thSmall}>Sales</th>
+              <th style={thSmall}>Remaining</th>
+            </tr>
+          </thead>
+          <tbody>
+            {results.map((r, i) => (
+              <tr key={i}>
+                <td style={tdSmall}>{r.name}</td>
+                <td style={tdSmall}>{r.masterQty}</td>
+                <td style={tdSmall}>{r.salesQty}</td>
+                <td style={tdSmall}>{r.remainingQty}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
 
-          <div style={{ height: 20 }} />
-
-          {/* LOGS */}
-          <div style={{ background: '#fff', padding: 16, borderRadius: 8 }}>
-            <h3>Refill History</h3>
-
-            {logs.length === 0 ? <div>No logs.</div> : (
-              <table style={{ width: '100%' }}>
-                <thead>
-                  <tr><th>Time</th><th>User</th><th>Action</th></tr>
-                </thead>
-                <tbody>
-                  {logs.map(l => (
-                    <tr key={l.id}>
-                      <td>{l.createdAt ? new Date(l.createdAt.seconds * 1000).toLocaleString() : '-'}</td>
-                      <td>{l.userEmail}</td>
-                      <td>{l.action}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-
-          </div>
-
+      {/* REFILL HISTORY CARD */}
+      <div style={{ ...card, marginTop: 30 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "baseline",
+          }}
+        >
+          <h3 style={{ margin: 0 }}>Refill History (You Only)</h3>
+          <span style={{ fontSize: 12, color: "#666" }}>
+            Total refills: <b>{logs.length}</b>
+          </span>
         </div>
 
+        {logs.length === 0 ? (
+          <p style={{ marginTop: 10 }}>No refills yet.</p>
+        ) : (
+          <table style={{ width: "100%", marginTop: 10, fontSize: 13 }}>
+            <thead>
+              <tr>
+                <th style={thSmall}>Time</th>
+                <th style={thSmall}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map((l) => (
+                <tr key={l.id}>
+                  <td style={tdSmall}>
+                    {l.createdAt?.seconds
+                      ? new Date(
+                          l.createdAt.seconds * 1000
+                        ).toLocaleString("en-IN")
+                      : "-"}
+                  </td>
+                  <td style={tdSmall}>{l.action}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
-  )
+  );
 }
+
+/* Shared styles */
+const card = {
+  background: "#fff",
+  padding: 20,
+  borderRadius: 12,
+  boxShadow: "0 4px 16px rgba(0,0,0,0.07)",
+  marginBottom: 20,
+};
+
+const csvCard = {
+  ...card,
+  flex: 1,
+  textAlign: "center",
+  cursor: "pointer",
+  marginBottom: 0,
+};
+
+const btnBack = {
+  padding: "6px 12px",
+  border: "none",
+  borderRadius: 6,
+  background: "#111",
+  color: "#fff",
+  cursor: "pointer",
+};
+
+const btnPrimary = {
+  padding: "10px 18px",
+  background: "#3498db",
+  color: "#fff",
+  borderRadius: 6,
+  border: "none",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const btnSuccess = {
+  padding: "10px 18px",
+  background: "#27ae60",
+  color: "#fff",
+  borderRadius: 6,
+  border: "none",
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const thSmall = {
+  textAlign: "left",
+  padding: "6px 8px",
+  fontWeight: 600,
+  color: "#444",
+};
+
+const tdSmall = {
+  padding: "6px 8px",
+  borderTop: "1px solid #f3f3f3",
+};
+
+const inputSelect = {
+  width: "100%",
+  padding: "6px 8px",
+  borderRadius: 6,
+  border: "1px solid #ccc",
+  fontSize: 13,
+};
+
+const inputNumber = {
+  width: "100%",
+  padding: "6px 8px",
+  borderRadius: 6,
+  border: "1px solid #ccc",
+  fontSize: 13,
+};
+
+const btnTinyPrimary = {
+  padding: "4px 8px",
+  fontSize: 11,
+  borderRadius: 6,
+  border: "none",
+  background: "#3498db",
+  color: "#fff",
+  cursor: "pointer",
+  fontWeight: 600,
+};
+
+const btnTinyGhost = {
+  padding: "4px 8px",
+  fontSize: 11,
+  borderRadius: 6,
+  border: "1px solid #ccc",
+  background: "#f7f7f7",
+  color: "#555",
+  cursor: "pointer",
+};

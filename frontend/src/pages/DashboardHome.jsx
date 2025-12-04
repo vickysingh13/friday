@@ -59,83 +59,101 @@ export default function DashboardHome() {
   }
 
   return (
-    <div style={{ padding: 24 }}>
+  <div style={{ padding: 24 }}>
 
-      {/* HERO SECTION */}
-      <div style={{
-        background: 'linear-gradient(90deg,#0f1724 0%, #10243a 100%)',
-        color: '#fff',
-        borderRadius: 12,
-        padding: 28,
-        marginBottom: 20,
-      }}>
-        <h1 style={{ margin: 0, fontSize: 28 }}>
-          Welcome {user.email?.split('@')[0]}
-        </h1>
-        <p style={{ marginTop: 8, color: '#cfe3ff' }}>
-          Your assigned machines and refill activity overview.
-        </p>
+    {/* HERO SECTION */}
+    <div style={{
+      background: 'linear-gradient(90deg,#0f1724 0%, #10243a 100%)',
+      color: '#fff',
+      borderRadius: 14,
+      padding: 32,
+      marginBottom: 28,
+      boxShadow: "0 6px 16px rgba(0,0,0,0.25)"
+    }}>
+      <h1 style={{ margin: 0, fontSize: 30, fontWeight: 800 }}>
+        Welcome back, {user.email?.split('@')[0]}
+      </h1>
+      <p style={{ marginTop: 10, color: '#cfe3ff', fontSize: 15 }}>
+        Track machines, products, and your refill activity.
+      </p>
+    </div>
+
+    {/* DASHBOARD CARDS */}
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))",
+      gap: 20,
+      marginBottom: 30
+    }}>
+      
+      <div style={cardStyle} onClick={() => nav("/machines-assigned")}>
+        <h3 style={cardTitle}>Assigned Machines</h3>
+        <div style={cardValue}>{assignedCount}</div>
+        <p style={cardHint}>Machines assigned by admin</p>
       </div>
 
-      {/* CARDS */}
-      <div style={{ display: "flex", gap: 20, marginBottom: 30 }}>
-        {/* Assigned Machines */}
-        <div
-          onClick={() => nav("/machines-assigned")}
-          style={cardStyle}
-        >
-          <h3>Assigned Machines</h3>
-          <p style={cardValue}>{assignedCount}</p>
-        </div>
-
-        {/* Total Products */}
-        <div
-          onClick={() => nav("/products")}
-          style={cardStyle}
-        >
-          <h3>Products</h3>
-          <p style={cardValue}>View List</p>
-        </div>
-
-        {/* Refill Logs */}
-        <div
-          onClick={() => nav("/my-refills")}
-          style={cardStyle}
-        >
-          <h3>Your Refills</h3>
-          <p style={cardValue}>{refillCount}</p>
-        </div>
+      <div style={cardStyle} onClick={() => nav("/products")}>
+        <h3 style={cardTitle}>Products</h3>
+        <div style={cardValue}>📦</div>
+        <p style={cardHint}>View product list</p>
       </div>
 
-      {/* MACHINE GRID */}
-      <h3>Machines Assigned to You</h3>
-
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))',
-        gap: 16
-      }}>
-        {machines.map(m => (
-          <MachineCard key={m.id} machine={m} onView={() => nav('/machine/' + m.id)} />
-        ))}
+      <div style={cardStyle} onClick={() => nav("/my-refills")}>
+        <h3 style={cardTitle}>Your Refills</h3>
+        <div style={cardValue}>{refillCount}</div>
+        <p style={cardHint}>Refills done by you</p>
       </div>
 
     </div>
-  )
+
+    {/* MACHINE LIST */}
+    <h3 style={{ marginBottom: 16 }}>Machines Assigned to You</h3>
+
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))',
+      gap: 16,
+    }}>
+      {machines.map(m => (
+        <MachineCard
+          key={m.id}
+          machine={m}
+          onView={() => nav('/machine/' + m.id)}
+        />
+      ))}
+
+      {machines.length === 0 && (
+        <div style={{
+          gridColumn: "1 / -1",
+          textAlign: "center",
+          color: "#777",
+          marginTop: 40,
+          fontSize: 18
+        }}>
+          No machines assigned yet.
+        </div>
+      )}
+    </div>
+  </div>
+)
 }
+
+// enhanced card styles
+const cardTitle = { margin: 0, fontWeight: 700, fontSize: 18 }
+const cardHint = { fontSize: 13, marginTop: 4, color: "#777" }
 
 const cardStyle = {
-  flex: 1,
-  padding: 20,
   background: "#fff",
-  borderRadius: 12,
-  boxShadow: "0 4px 12px rgba(0,0,0,0.08)",
+  borderRadius: 14,
+  padding: 22,
+  boxShadow: "0 4px 18px rgba(0,0,0,0.08)",
   cursor: "pointer",
+  transition: "transform .2s, box-shadow .2s",
   textAlign: "center",
 }
-
 const cardValue = {
-  fontSize: 32,
-  fontWeight: 800,
-  marginTop: 10,
+  fontSize: 36,
+  fontWeight: 900,
+  margin: "10px 0",
+  color: "#0b74ff"
 }
