@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useRef } from "react";
+// frontend/src/components/MachineDetailsUI.jsx
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import Papa from "papaparse";
 import axios from "axios";
 import {
@@ -24,6 +25,8 @@ export default function MachineDetailsUI({ machineId, onBack }) {
   const [salesFile, setSalesFile] = useState(null);
   const [results, setResults] = useState([]);
   const [status, setStatus] = useState("");
+
+  const [activeTray, setActiveTray] = useState(null); // which tray is opened in modal
 
   const fileInputMaster = useRef();
   const fileInputSales = useRef();
@@ -85,6 +88,19 @@ export default function MachineDetailsUI({ machineId, onBack }) {
       console.error("Failed to load logs", e);
     }
   }
+
+  // group slots by tray for tray buttons
+  const trays = useMemo(() => {
+    const map = {};
+    slots.forEach((s) => {
+      const t = s.tray || 1;
+      if (!map[t]) map[t] = [];
+      map[t].push(s);
+    });
+    return Object.entries(map).sort(
+      ([a], [b]) => Number(a) - Number(b)
+    ); // [[trayNumber, slots[]], ...]
+  }, [slots]);
 
   // ─────────────────────────────────────────
   // CSV UTILS
@@ -223,9 +239,11 @@ export default function MachineDetailsUI({ machineId, onBack }) {
     return "";
   }
 
-  // Placeholder merge / demerge
+  // Placeholder merge / demerge – to avoid corrupting slot data now.
   function handleMergeClick() {
-    alert("Merge / demerge slots will be implemented in the next phase.");
+    alert(
+      "Merge / Demerge behaviour will be added after we design how to store merged capacities safely."
+    );
   }
 
   if (!machine) {
@@ -238,6 +256,14 @@ export default function MachineDetailsUI({ machineId, onBack }) {
       </div>
     );
   }
+
+  // slots of the tray currently opened in modal
+  const activeTraySlots =
+    activeTray == null
+      ? []
+      : slots
+          .filter((s) => (s.tray || 1) === activeTray)
+          .sort((a, b) => (a.slot_number || 0) - (b.slot_number || 0));
 
   return (
     <div style={{ padding: 24 }}>
@@ -277,7 +303,7 @@ export default function MachineDetailsUI({ machineId, onBack }) {
         </div>
       </div>
 
-      {/* SLOT TABLE CARD */}
+      {/* TRAY OVERVIEW CARD */}
       <div style={card}>
         <div
           style={{
@@ -288,118 +314,34 @@ export default function MachineDetailsUI({ machineId, onBack }) {
         >
           <h3 style={{ margin: 0 }}>Tray / Slot Configuration</h3>
           <span style={{ fontSize: 12, color: "#888" }}>
-            Edit product, capacity & current qty, then click SAVE
+            Tap a tray to edit its slots (product, capacity & qty).
           </span>
         </div>
 
-        {slots.length === 0 ? (
+        {trays.length === 0 ? (
           <p style={{ marginTop: 12 }}>No slots configured yet.</p>
         ) : (
-          <table style={{ width: "100%", marginTop: 10, fontSize: 13 }}>
-            <thead>
-              <tr>
-                <th style={thSmall}>Tray</th>
-                <th style={thSmall}>Slot</th>
-                <th style={thSmall}>Product</th>
-                <th style={thSmall}>Capacity</th>
-                <th style={thSmall}>Current Qty</th>
-                <th style={thSmall}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {slots.map((s) => {
-                const selectedProductId = getSlotSelectedProductId(s);
-                return (
-                  <tr key={s.id}>
-                    <td style={tdSmall}>{s.tray ?? "-"}</td>
-                    <td style={tdSmall}>{s.slot_number}</td>
-
-                    {/* PRODUCT DROPDOWN */}
-                    <td style={tdSmall}>
-                      <select
-                        style={inputSelect}
-                        value={selectedProductId}
-                        onChange={(e) =>
-                          handleSlotFieldChange(s.id, "product_id", e.target.value)
-                        }
-                      >
-                        <option value="">-- Select product --</option>
-                        {products.map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {labelForProduct(p)}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-
-                    {/* CAPACITY EDIT */}
-                    <td style={tdSmall}>
-                      <input
-                        type="number"
-                        min="0"
-                        style={inputNumber}
-                        value={
-                          s.capacity === undefined || s.capacity === null
-                            ? ""
-                            : s.capacity
-                        }
-                        onChange={(e) =>
-                          handleSlotFieldChange(s.id, "capacity", e.target.value)
-                        }
-                      />
-                    </td>
-
-                    {/* CURRENT_QTY EDIT */}
-                    <td style={tdSmall}>
-                      <input
-                        type="number"
-                        min="0"
-                        style={inputNumber}
-                        value={
-                          s.current_qty === undefined || s.current_qty === null
-                            ? ""
-                            : s.current_qty
-                        }
-                        onChange={(e) =>
-                          handleSlotFieldChange(
-                            s.id,
-                            "current_qty",
-                            e.target.value
-                          )
-                        }
-                      />
-                    </td>
-
-                    {/* ACTION BUTTONS */}
-                    <td style={tdSmall}>
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button
-                          style={btnTinyPrimary}
-                          onClick={() => saveSlot(s)}
-                        >
-                          Save
-                        </button>
-                        <button
-                          style={btnTinyGhost}
-                          onClick={handleMergeClick}
-                          title="Merge with neighboring slot (coming soon)"
-                        >
-                          Merge
-                        </button>
-                        <button
-                          style={btnTinyGhost}
-                          onClick={handleMergeClick}
-                          title="Demerge slot (coming soon)"
-                        >
-                          Demerge
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div
+            style={{
+              marginTop: 16,
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 12,
+            }}
+          >
+            {trays.map(([trayNumber, traySlots]) => (
+              <button
+                key={trayNumber}
+                style={trayChip}
+                onClick={() => setActiveTray(Number(trayNumber))}
+              >
+                <div style={{ fontWeight: 700 }}>Tray {trayNumber}</div>
+                <div style={{ fontSize: 11, opacity: 0.8 }}>
+                  {traySlots.length} slots
+                </div>
+              </button>
+            ))}
+          </div>
         )}
       </div>
 
@@ -409,14 +351,16 @@ export default function MachineDetailsUI({ machineId, onBack }) {
       <div style={{ display: "flex", gap: 20, marginTop: 10 }}>
         <div
           style={csvCard}
-          onClick={() => fileInputMaster.current && fileInputMaster.current.click()}
+          onClick={() =>
+            fileInputMaster.current && fileInputMaster.current.click()
+          }
         >
           <h4 style={{ marginBottom: 6 }}>Master CSV</h4>
           <p style={{ margin: 0, fontSize: 13, color: "#555" }}>
             Upload or drag file here
           </p>
           <small style={{ fontSize: 11, color: "#999" }}>
-            Expected: product & quantity
+            Expected: product &amp; quantity
           </small>
           <input
             ref={fileInputMaster}
@@ -429,7 +373,9 @@ export default function MachineDetailsUI({ machineId, onBack }) {
 
         <div
           style={csvCard}
-          onClick={() => fileInputSales.current && fileInputSales.current.click()}
+          onClick={() =>
+            fileInputSales.current && fileInputSales.current.click()
+          }
         >
           <h4 style={{ marginBottom: 6 }}>Sales CSV</h4>
           <p style={{ margin: 0, fontSize: 13, color: "#555" }}>
@@ -449,7 +395,14 @@ export default function MachineDetailsUI({ machineId, onBack }) {
       </div>
 
       {/* CSV BUTTONS */}
-      <div style={{ display: "flex", gap: 14, marginTop: 20, alignItems: "center" }}>
+      <div
+        style={{
+          display: "flex",
+          gap: 14,
+          marginTop: 20,
+          alignItems: "center",
+        }}
+      >
         <button style={btnPrimary} onClick={handleCalculate}>
           Calculate
         </button>
@@ -529,6 +482,143 @@ export default function MachineDetailsUI({ machineId, onBack }) {
           </table>
         )}
       </div>
+
+      {/* TRAY EDITOR MODAL */}
+      {activeTray != null && (
+        <div style={trayModalBackdrop}>
+          <div style={trayModalBox}>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 10,
+              }}
+            >
+              <h3 style={{ margin: 0 }}>Tray {activeTray} – Slots</h3>
+              <button
+                style={btnTinyGhost}
+                onClick={() => setActiveTray(null)}
+              >
+                Close
+              </button>
+            </div>
+
+            {activeTraySlots.length === 0 ? (
+              <p>No slots in this tray.</p>
+            ) : (
+              <table style={{ width: "100%", fontSize: 13 }}>
+                <thead>
+                  <tr>
+                    <th style={thSmall}>Slot</th>
+                    <th style={thSmall}>Product</th>
+                    <th style={thSmall}>Capacity</th>
+                    <th style={thSmall}>Current Qty</th>
+                    <th style={thSmall}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeTraySlots.map((s) => {
+                    const selectedProductId = getSlotSelectedProductId(s);
+                    return (
+                      <tr key={s.id}>
+                        <td style={tdSmall}>{s.slot_number}</td>
+
+                        <td style={tdSmall}>
+                          <select
+                            style={inputSelect}
+                            value={selectedProductId}
+                            onChange={(e) =>
+                              handleSlotFieldChange(
+                                s.id,
+                                "product_id",
+                                e.target.value
+                              )
+                            }
+                          >
+                            <option value="">-- Select product --</option>
+                            {products.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {labelForProduct(p)}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+
+                        <td style={tdSmall}>
+                          <input
+                            type="number"
+                            min="0"
+                            style={inputNumber}
+                            value={
+                              s.capacity === undefined || s.capacity === null
+                                ? ""
+                                : s.capacity
+                            }
+                            onChange={(e) =>
+                              handleSlotFieldChange(
+                                s.id,
+                                "capacity",
+                                e.target.value
+                              )
+                            }
+                          />
+                        </td>
+
+                        <td style={tdSmall}>
+                          <input
+                            type="number"
+                            min="0"
+                            style={inputNumber}
+                            value={
+                              s.current_qty === undefined ||
+                              s.current_qty === null
+                                ? ""
+                                : s.current_qty
+                            }
+                            onChange={(e) =>
+                              handleSlotFieldChange(
+                                s.id,
+                                "current_qty",
+                                e.target.value
+                              )
+                            }
+                          />
+                        </td>
+
+                        <td style={tdSmall}>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            <button
+                              style={btnTinyPrimary}
+                              onClick={() => saveSlot(s)}
+                            >
+                              Save
+                            </button>
+                            <button
+                              style={btnTinyGhost}
+                              onClick={handleMergeClick}
+                              title="Merge with neighbouring slot (coming soon)"
+                            >
+                              Merge
+                            </button>
+                            <button
+                              style={btnTinyGhost}
+                              onClick={handleMergeClick}
+                              title="Demerge slot (coming soon)"
+                            >
+                              Demerge
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -548,6 +638,37 @@ const csvCard = {
   textAlign: "center",
   cursor: "pointer",
   marginBottom: 0,
+};
+
+const trayChip = {
+  minWidth: 90,
+  padding: "10px 14px",
+  borderRadius: 10,
+  border: "1px solid #dde3ea",
+  background: "#f9fafb",
+  cursor: "pointer",
+  textAlign: "left",
+  boxShadow: "0 2px 4px rgba(15,23,42,0.05)",
+};
+
+const trayModalBackdrop = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0,0,0,0.45)",
+  display: "flex",
+  justifyContent: "center",
+  alignItems: "center",
+  zIndex: 9999,
+};
+
+const trayModalBox = {
+  background: "#fff",
+  padding: 20,
+  borderRadius: 12,
+  width: "640px",
+  maxHeight: "80vh",
+  overflowY: "auto",
+  boxShadow: "0 18px 40px rgba(15,23,42,0.35)",
 };
 
 const btnBack = {

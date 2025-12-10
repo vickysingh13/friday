@@ -1,19 +1,18 @@
-// frontend/src/components/ProtectedRoute.jsx
 import React from "react";
-import { Navigate } from "react-router-dom";
+import { Navigate, Outlet } from "react-router-dom";
 import { useAdmin } from "../contexts/AdminContext";
 
-export default function ProtectedRoute({ children }) {
+export default function ProtectedRoute() {
   const { loading, isAdmin, user } = useAdmin();
 
   if (loading) return <div>Checking permissions...</div>;
 
-  // If not logged in
-  if (!user) return <Navigate to="/login" />;
+  // Not logged in → go login
+  if (!user) return <Navigate to="/login" replace />;
 
-  // If logged in but not admin
-  if (!isAdmin) return <Navigate to="/" />;
+  // Logged in but not admin → go user dashboard
+  if (!isAdmin) return <Navigate to="/" replace />;
 
-  // Admin → allow access
-  return children;
+  // Admin → allow nested routes to render!
+  return <Outlet />;
 }

@@ -27,13 +27,16 @@ export default function AddMachineModal({ onClose }) {
   const [saving, setSaving] = useState(false);
 
   function generateSlots() {
-    const t = Number(trayCount);
-    const s = Number(slotsPerTray);
+    let t = Number(trayCount);
+    let s = Number(slotsPerTray);
 
     if (!t || !s || t <= 0 || s <= 0) {
       alert("Please enter valid tray and slots per tray values.");
       return;
     }
+
+    // safety clamp for trays
+    if (t > 7) t = 7;
 
     // pick base capacity: use user-entered defaultSlotCap OR auto-calculated from machine capacity
     let baseCap = Number(defaultSlotCap);
@@ -212,7 +215,7 @@ export default function AddMachineModal({ onClose }) {
             <input
               type="number"
               min={1}
-              max={10}
+              max={7}
               value={trayCount}
               onChange={(e) => setTrayCount(e.target.value)}
             />
@@ -286,7 +289,10 @@ export default function AddMachineModal({ onClose }) {
               </thead>
               <tbody>
                 {slots.map((slot, idx) => (
-                  <tr key={`${slot.tray}-${slot.slot_number}`} style={{ borderBottom: "1px solid #f0f0f0" }}>
+                  <tr
+                    key={`${slot.tray}-${slot.slot_number}`}
+                    style={{ borderBottom: "1px solid #f0f0f0" }}
+                  >
                     <td style={td}>{slot.tray}</td>
                     <td style={td}>{slot.slot_number}</td>
                     <td style={td}>

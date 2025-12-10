@@ -16,6 +16,7 @@ import AdminRefillLogs from "./pages/admin/AdminRefillLogs";
 import AdminAuditLogs from "./pages/admin/AdminAuditLogs";
 import AdminUsers from "./pages/admin/AdminUsers";
 import AdminAssignMachines from "./pages/admin/AdminAssignMachines";
+import AdminMachineSlots from "./pages/admin/AdminMachineSlots";
 
 import { AdminProvider } from "./contexts/AdminContext";
 import "./styles.css";
@@ -33,7 +34,7 @@ function App() {
           {/* LOGIN */}
           <Route path="/login" element={<Login />} />
 
-          {/* USER HOME — NO SIDEBAR */}
+          {/* USER HOME */}
           <Route
             path="/"
             element={
@@ -45,7 +46,7 @@ function App() {
             }
           />
 
-          {/* USER MACHINE PAGE — NO SIDEBAR */}
+          {/* USER MACHINE PAGE */}
           <Route
             path="/machine/:id"
             element={
@@ -57,25 +58,21 @@ function App() {
             }
           />
 
-          {/* ADMIN PANEL — WITH SIDEBAR */}
-          <Route
-            path="/admin"
-            element={
-              <ProtectedRoute>
-                <AdminLayout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<AdminDashboard />} />
-            <Route path="machines" element={<AdminMachines />} />
-            <Route path="machines/assign" element={<AdminAssignMachines />} />
-            <Route path="products" element={<AdminProducts />} />
-            <Route path="refill-logs" element={<AdminRefillLogs />} />
-            <Route path="audit-logs" element={<AdminAuditLogs />} />
-            <Route path="users" element={<AdminUsers />} />
+          {/* ADMIN ROUTES — PROTECTED */}
+          <Route element={<ProtectedRoute />}>
+            <Route path="/admin" element={<AdminLayout />}>
+              <Route index element={<AdminDashboard />} />
+              <Route path="machines" element={<AdminMachines />} />
+              <Route path="machines/assign" element={<AdminAssignMachines />} />
+              <Route path="machines/:machineId/slots" element={<AdminMachineSlots />} />
+              <Route path="products" element={<AdminProducts />} />
+              <Route path="refill-logs" element={<AdminRefillLogs />} />
+              <Route path="audit-logs" element={<AdminAuditLogs />} />
+              <Route path="users" element={<AdminUsers />} />
+            </Route>
           </Route>
 
-          {/* CATCH-ALL */}
+          {/* CATCH ALL */}
           <Route path="*" element={<Navigate to="/" />} />
 
         </Routes>
