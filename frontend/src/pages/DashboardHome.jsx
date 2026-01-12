@@ -1,159 +1,193 @@
-// frontend/src/pages/DashboardHome.jsx
-import React, { useEffect, useMemo, useState } from 'react'
-import { collection, getDocs, query, where } from 'firebase/firestore'
-import { db } from '../firebaseClient'
-import MachineCard from '../components/MachineCard'
-import { useNavigate } from 'react-router-dom'
+import React, { useEffect, useState } from "react";
+import { collection, getDocs, query, where } from "firebase/firestore";
+import { db } from "../firebaseClient";
+import { useNavigate } from "react-router-dom";
+import MachineCard from "../components/MachineCard";
+import { useAdmin } from "../contexts/AdminContext";
 
 export default function DashboardHome() {
-  const [machines, setMachines] = useState([])
-  const [logs, setLogs] = useState([])
-  const [loading, setLoading] = useState(true)
-  const nav = useNavigate()
+  const { user, role, orgId, loading } = useAdmin();
+  const nav = useNavigate();
 
-  const user = JSON.parse(localStorage.getItem("sm_user") || "{}")
-  const myUID = user.uid
+  const [machines, setMachines] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [pageLoading, setPageLoading] = useState(true);
 
-  // LOAD ASSIGNED MACHINES ONLY
+  /* 🔍 DEBUG — KEEP TEMPORARILY */
   useEffect(() => {
-    async function loadMachines() {
-      setLoading(true)
-      try {
-        const q = query(
+    console.log("🧠 AUTH CONTEXT", {
+      uid: user?.uid,
+      email: user?.email,
+      role,
+      orgId,
+    });
+  }, [user, role, orgId]);
+
+  /* 🚫 WAIT UNTIL AUTH CONTEXT IS STABLE */
+  useEffect(() => {
+    if (loading) return;
+    if (!user) return;
+    if (!role) return;
+
+    // orgId REQUIRED for admin + refiller
+    if (role !== "super_admin" && !orgId) {
+      console.warn("⛔ Skipping dashboard queries — orgId missing");
+      setPageLoading(false);
+      return;
+    }
+
+    loadMachines();
+    loadLogs();
+  }, [loading, user, role, orgId]);
+
+  /* 🔹 LOAD MACHINES (ORG-SAFE) */
+  async function loadMachines() {
+    try {
+      let q;
+
+      if (role === "super_admin") {
+        // Super admin → all machines
+        q = query(collection(db, "machines"));
+      } else if (role === "admin" && orgId) {
+        q = query(
           collection(db, "machines"),
-          where("assignedTo", "==", myUID)
-        )
-        const mSnap = await getDocs(q)
-        setMachines(mSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-      } catch (e) {
-        console.error(e)
-      } finally {
-        setLoading(false)
+          where("orgId", "==", orgId)
+        );
+      } else if (role === "refiller" && orgId) {
+        q = query(
+          collection(db, "machines"),
+          where("orgId", "==", orgId),
+          where("assignedTo", "==", user.uid)
+        );
+      } else {
+        console.warn("⛔ loadMachines aborted — invalid role/orgId");
+        return;
       }
-    }
-    loadMachines()
-  }, [myUID])
 
-  // LOAD ONLY THIS REFILLER'S REFILL LOGS
-  useEffect(() => {
-    async function loadLogs() {
-      try {
-        const q = query(
+      const snap = await getDocs(q);
+      setMachines(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.error("❌ loadMachines failed", err);
+    } finally {
+      setPageLoading(false);
+    }
+  }
+
+  /* 🔹 LOAD REFILL LOGS (ORG + USER SAFE) */
+  async function loadLogs() {
+    try {
+      let q;
+
+      if (role === "super_admin") {
+        q = query(collection(db, "refill_logs"));
+      } else if (orgId) {
+        q = query(
           collection(db, "refill_logs"),
+          where("orgId", "==", orgId),
           where("userEmail", "==", user.email)
-        )
-        const lSnap = await getDocs(q)
-        setLogs(lSnap.docs.map(d => ({ id: d.id, ...d.data() })))
-      } catch (e) {
-        console.error(e)
+        );
+      } else {
+        console.warn("⛔ loadLogs aborted — orgId missing");
+        return;
       }
+
+      const snap = await getDocs(q);
+      setLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (err) {
+      console.error("❌ loadLogs failed", err);
     }
-    loadLogs()
-  }, [user.email])
+  }
 
-  const assignedCount = machines.length
-  const refillCount = logs.length
-
-  if (loading) {
-    return <div style={{ padding: 28 }}>Loading dashboard...</div>
+  if (loading || pageLoading) {
+    return <div style={{ padding: 24 }}>Loading dashboard…</div>;
   }
 
   return (
-  <div style={{ padding: 24 }}>
+    <div style={{ padding: 24 }}>
 
-    {/* HERO SECTION */}
-    <div style={{
-      background: 'linear-gradient(90deg,#0f1724 0%, #10243a 100%)',
-      color: '#fff',
-      borderRadius: 14,
-      padding: 32,
-      marginBottom: 28,
-      boxShadow: "0 6px 16px rgba(0,0,0,0.25)"
-    }}>
-      <h1 style={{ margin: 0, fontSize: 30, fontWeight: 800 }}>
-        Welcome back, {user.email?.split('@')[0]}
-      </h1>
-      <p style={{ marginTop: 10, color: '#cfe3ff', fontSize: 15 }}>
-        Track machines, products, and your refill activity.
-      </p>
-    </div>
-
-    {/* DASHBOARD CARDS */}
-    <div style={{
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))",
-      gap: 20,
-      marginBottom: 30
-    }}>
-      
-      <div style={cardStyle} onClick={() => nav("/machines-assigned")}>
-        <h3 style={cardTitle}>Assigned Machines</h3>
-        <div style={cardValue}>{assignedCount}</div>
-        <p style={cardHint}>Machines assigned by admin</p>
+      {/* HERO */}
+      <div
+        style={{
+          background: "linear-gradient(90deg,#0f1724,#10243a)",
+          color: "#fff",
+          borderRadius: 14,
+          padding: 28,
+          marginBottom: 26,
+        }}
+      >
+        <h2 style={{ margin: 0 }}>Welcome, {user.email}</h2>
+        <p style={{ opacity: 0.85, marginTop: 8 }}>
+          Role: <b>{role}</b> · Org: <b>{orgId || "—"}</b>
+        </p>
       </div>
 
-      <div style={cardStyle} onClick={() => nav("/products")}>
-        <h3 style={cardTitle}>Products</h3>
-        <div style={cardValue}>📦</div>
-        <p style={cardHint}>View product list</p>
-      </div>
-
-      <div style={cardStyle} onClick={() => nav("/my-refills")}>
-        <h3 style={cardTitle}>Your Refills</h3>
-        <div style={cardValue}>{refillCount}</div>
-        <p style={cardHint}>Refills done by you</p>
-      </div>
-
-    </div>
-
-    {/* MACHINE LIST */}
-    <h3 style={{ marginBottom: 16 }}>Machines Assigned to You</h3>
-
-    <div style={{
-      display: 'grid',
-      gridTemplateColumns: 'repeat(auto-fit,minmax(260px,1fr))',
-      gap: 16,
-    }}>
-      {machines.map(m => (
-        <MachineCard
-          key={m.id}
-          machine={m}
-          onView={() => nav('/machine/' + m.id)}
-        />
-      ))}
-
-      {machines.length === 0 && (
-        <div style={{
-          gridColumn: "1 / -1",
-          textAlign: "center",
-          color: "#777",
-          marginTop: 40,
-          fontSize: 18
-        }}>
-          No machines assigned yet.
+      {/* STATS */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))",
+          gap: 16,
+          marginBottom: 30,
+        }}
+      >
+        <div style={card}>
+          <h3>Machines</h3>
+          <div style={big}>{machines.length}</div>
         </div>
-      )}
+
+        <div style={card}>
+          <h3>Your Refills</h3>
+          <div style={big}>{logs.length}</div>
+        </div>
+      </div>
+
+      {/* MACHINE LIST */}
+      <h3 style={{ marginBottom: 12 }}>Machines</h3>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))",
+          gap: 14,
+        }}
+      >
+        {machines.map(m => (
+          <MachineCard
+            key={m.id}
+            machine={m}
+            onView={() => {
+              if (role === "refiller") {
+                nav(`/refiller/machines/${m.id}/slots`);
+              } else {
+                nav(`/admin/machines/${m.id}/slots`);
+              }
+            }}
+          />
+        ))}
+
+        {machines.length === 0 && (
+          <div style={{ color: "#777", marginTop: 30 }}>
+            No machines available.
+          </div>
+        )}
+      </div>
     </div>
-  </div>
-)
+  );
 }
 
-// enhanced card styles
-const cardTitle = { margin: 0, fontWeight: 700, fontSize: 18 }
-const cardHint = { fontSize: 13, marginTop: 4, color: "#777" }
+/* ───── styles ───── */
 
-const cardStyle = {
+const card = {
   background: "#fff",
-  borderRadius: 14,
-  padding: 22,
-  boxShadow: "0 4px 18px rgba(0,0,0,0.08)",
-  cursor: "pointer",
-  transition: "transform .2s, box-shadow .2s",
+  borderRadius: 12,
+  padding: 20,
+  boxShadow: "0 4px 14px rgba(0,0,0,.08)",
   textAlign: "center",
-}
-const cardValue = {
-  fontSize: 36,
-  fontWeight: 900,
-  margin: "10px 0",
-  color: "#0b74ff"
-}
+};
+
+const big = {
+  fontSize: 32,
+  fontWeight: 800,
+  marginTop: 6,
+  color: "#0b74ff",
+};

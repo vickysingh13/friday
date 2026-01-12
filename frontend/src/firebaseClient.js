@@ -1,6 +1,7 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+// frontend/src/firebaseClient.js
+import { initializeApp, getApps, getApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -11,14 +12,9 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
+// 🔒 ENSURE SINGLE APP INSTANCE
+const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-const app = initializeApp(firebaseConfig);
+// 🔒 SINGLETONS
 export const auth = getAuth(app);
 export const db = getFirestore(app);
-
-export async function login(email, password){
-  try {
-    const cred = await signInWithEmailAndPassword(auth, email, password);
-    return cred.user;
-  } catch(e){ throw e; }
-}
